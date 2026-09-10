@@ -1,0 +1,90 @@
+# GitHub Actions：每日构建并部署 行业主升浪工作台 到 GitHub Pages
+#
+# 触发：
+#   - schedule: 工作日 (Mon-Fri) 北京时间 11:35 / 15:15
+#       北京 = UTC+8 → 11:35 北京 = 03:35 UTC，15:15 北京 = 07:15 UTC
+#       两条 cron 分开写，保证分钟数各自精确（不能合并成 35 3,7——那会让下午变成 15:35）
+#   - workflow_dispatch: 手动触发（首次部署 / 应急刷新）
+#
+# 并发：concurrency=cancel-in-progress 防止两次叠跑。
+#
+# 关键设计：
+#   1) 每次运行 generate.py 后，把刷新的小文件（index.html / workbench.json）
+#      commit 回仓库 —— 既是历史快照，更重要的是让仓库保持活跃，
+#      避免GitHub「60天无提交自动停用定时任务」的机制把每日更新悄悄停掉。
+#      （大文件 sw_industry.pkl 不回传，防止仓库膨胀；反正每次都会重抓最新。）
+#   2) 部署用 GitHub Pages with Actions（upload-pages-artifact + deploy-pages 标准4步）。
+
+name: daily_workbench
+
+on:
+  schedule:
+    - cron: '35 3 * * 1-5'   # 北京时间 工作日 11:35（=UTC 03:35）
+    - cron: '15 7 * * 1-5'   # 北京时间 工作日 15:15（=UTC 07:15）
+  workflow_dispatch:
+
+concurrency:
+  group: daily
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # 需要 write 才能 commit 回仓库（保持仓库活跃）
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: checkout (含 data/ 14MB pkl)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # 保留 history，保证 commit/push 正常
+          lfs: false            # sw_industry.pkl 已是普通 git 跟踪，无需 LFS
+
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: generate static index.html
+        run: python generate.py
+
+      - name: commit refreshed data back (防止60天无提交被停用定时)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html data/workbench.json
+          if git diff --cached --quiet; then
+            echo "no changes to commit"
+          else
+            git commit -m "chore(daily): refresh workbench $(date -u +%F_%H%M)"
+            git pull --rebase origin ${GITHUB_REF_NAME} || true
+            git push || echo "push failed (non-critical, deployment continues)"
+          fi
+
+      - name: setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Pages 站点根目录；仓库根有 index.html，直接作为入口
+          path: .
+
+      - name: deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: summary
+        if: always()
+        run: |
+          echo "✅ Pages deployed (run ${{ github.run_number }})"
+          echo "URL: ${{ steps.deployment.outputs.page_url }}"
