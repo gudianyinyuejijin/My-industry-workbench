@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>行业主升浪趋势识别工作台 · 版本2.0</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--line:#e7ecf3;--txt:#1a1a2e;--sub:#6b7280;--red:#D64550;--orange:#F6A821;--green:#7DBB63;--blue:#2E86AB;--purple:#9B5DE5}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;background:var(--bg);color:var(--txt);line-height:1.55}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 60px}
+header{background:linear-gradient(135deg,#1a1a2e 0%,#2E86AB 100%);color:#fff;border-radius:16px;padding:26px 30px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px}
+header h1{font-size:24px;letter-spacing:1px}
+header .meta{font-size:13px;opacity:.92;text-align:right}
+.v2badge{display:inline-block;background:#F6A821;color:#fff;font-size:12px;font-weight:800;padding:2px 10px;border-radius:6px;vertical-align:3px;margin-left:8px}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:14px;margin:18px 0}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 10px;text-align:center}
+.kpi .v{font-size:28px;font-weight:800}.kpi .l{font-size:12.5px;color:var(--sub);margin-top:2px}
+.cat-box{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 20px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+.cat-box .t{font-weight:700;font-size:14px}.hint{font-size:12.5px;color:#666}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 14px}
+.tab{padding:9px 20px;border-radius:10px;background:var(--card);border:1px solid var(--line);cursor:pointer;font-size:14.5px;font-weight:600;color:var(--sub);transition:all .18s;user-select:none}
+.tab:hover{border-color:#b8c6d8;color:var(--txt)}
+.tab.active{background:var(--txt);color:#fff;border-color:var(--txt)}
+.tab .cnt{font-size:12px;opacity:.75;margin-left:4px}
+.search{padding:9px 14px;border-radius:10px;border:1px solid var(--line);font-size:14px;width:240px;outline:none}
+.search:focus{border-color:var(--blue)}
+.tbl-card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 7px;text-align:center;border-bottom:1px solid #f0f3f7;white-space:nowrap}
+th{background:#f4f6f9;font-size:12px;color:#444;position:sticky;top:0;z-index:2}
+th:first-child,td:first-child{text-align:center}
+th:nth-child(2),td:nth-child(2){text-align:left}
+tbody tr:hover{background:#f7fafc}
+tr.main{background:#fdeeef}tr.strong{background:#fdf6e6}tr.forming{background:#f2f8ee}tr.turn{background:#eef4fb}
+.rank{display:inline-block;min-width:24px;height:24px;line-height:24px;border-radius:50%;background:#eef1f6;font-size:12px;font-weight:700}
+.rank.top{background:var(--red);color:#fff}.rank.s{background:var(--orange);color:#fff}.rank.f{background:var(--green);color:#fff}
+.name-cell{font-weight:700}.name-cell small{color:#999;font-weight:400;margin-left:5px;font-size:11px}
+.score{font-size:15px;font-weight:800}
+.score.main{color:var(--red)}.score.strong{color:var(--orange)}.score.forming{color:var(--green)}.score.turn{color:var(--blue)}
+.tag{display:inline-block;padding:2px 10px;border-radius:14px;font-size:11.5px;font-weight:700;color:#fff}
+.tag.main{background:var(--red)}.tag.strong{background:var(--orange)}.tag.forming{background:var(--green)}.tag.turn{background:var(--blue)}.tag.none{background:#c5cad3}
+.etf{display:inline-block;margin:1px 3px;padding:2px 8px;background:#eef4fb;border-radius:6px;font-size:11.5px;color:#2E86AB;font-weight:600}
+.etf b{color:#98a8bd;font-weight:400;margin-left:3px}
+.up{color:#D64550}.down{color:#3d9e63}
+.fbar{width:150px;height:10px;background:#eef1f6;border-radius:6px;overflow:hidden;display:inline-flex;vertical-align:middle}
+.fbar i{height:100%}
+.fbar .f1{background:#2E86AB}.fbar .f2{background:#F6A821}.fbar .f3{background:#7DBB63}.fbar .f4{background:#9B5DE5}.fbar .f5{background:#D64550}
+.rps-cell{font-weight:700;padding:2px 8px;border-radius:6px;display:inline-block;min-width:34px}
+.rps-hi{background:#fdeeef;color:#D64550}.rps-mid{background:#fdf6e6;color:#b07a10}.rps-lo{background:#f0f1f4;color:#888}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--sub);padding:10px 16px;background:#fafbfd;border-bottom:1px solid var(--line)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.foot{text-align:center;color:#999;font-size:12px;margin-top:30px;line-height:2}
+.empty{text-align:center;color:#999;padding:60px 0;font-size:14px}
+.notes{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px 24px;margin-top:20px;font-size:13.5px;color:#444}
+.notes b{color:var(--txt)}
+.takeaway{background:linear-gradient(135deg,#fff,#fdf6e6);border:1px solid #f0e0b8;border-radius:14px;padding:18px 24px;margin:16px 0}
+.takeaway .tk-title{font-size:15px;font-weight:800;color:#b07a10;letter-spacing:.5px;margin-bottom:10px}
+.takeaway .tk-item{display:flex;gap:10px;font-size:13.5px;line-height:1.75;color:#444;margin:4px 0}
+.takeaway .tk-item b{color:var(--txt)}
+.takeaway .tk-num{flex:0 0 20px;height:20px;line-height:20px;border-radius:6px;background:#F6A821;color:#fff;text-align:center;font-size:12px;font-weight:800;margin-top:2px}
+.takeaway .tk-verdict{margin-top:10px;padding-top:10px;border-top:1px dashed #e8d9a8;font-size:13.5px;font-weight:700;color:#a8660f}
+.erba-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:16px}
+.erba-col{background:#fafbfd;border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.erba-col h3{font-size:15px;margin-bottom:4px}
+.erba-col .sig{font-size:13px;font-weight:700;margin-bottom:10px;padding:5px 10px;border-radius:8px;display:inline-block}
+.erba-sig-in{background:#fdeeef;color:#D64550}
+.erba-sig-out{background:#eef4fb;color:#2E86AB}
+.erba-sig-mid{background:#fdf6e6;color:#b07a10}
+.erba-sig-na{background:#f0f1f4;color:#888}
+.erba-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px dashed #eef1f6;font-size:13.5px}
+.erba-row:last-child{border-bottom:none}
+.erba-row .nm{font-weight:600}
+.erba-row .na{color:#aab0bb;font-size:12px;font-style:italic}
+@media(max-width:900px){.erba-grid{grid-template-columns:1fr}}
+@media(max-width:900px){.fbar{width:100px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+<div>
+<h1>🚂 行业主升浪趋势识别工作台<span class="v2badge">版本 2.0</span></h1>
+<div style="font-size:13px;opacity:.9;margin-top:6px">趋势结构(30)+价格强度(20)+趋势方向(15)+相对强度(25)−过热扣分(10) · 申万155个行业</div>
+</div>
+<div class="meta">
+<div>数据日期 <b id="tdate">--</b></div>
+<div>行业主升浪评分 + 行业RPS强度排名</div>
+<div style="margin-top:4px;opacity:.85">数据来源：申万宏源研究官网</div>
+</div>
+</header>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="takeaway" id="takeaway"></div>
+
+<div class="cat-box">
+<span class="t">阶段判定：</span>
+<span class="hint">主升浪 <b style="color:#D64550">&gt;80</b> · 强趋势 <b style="color:#F6A821">65–80</b> · 趋势形成 <b style="color:#7DBB63">50–65</b> · 底部反转 <b style="color:#8AB6D6">35–50</b> · 弱势 <b style="color:#9aa3b2">&lt;35</b></span>
+</div>
+
+<div class="tabs" id="tabs"></div>
+<input class="search" id="q" placeholder="🔍 搜索行业 / ETF…" oninput="render()">
+
+<div class="tbl-card" id="score-card">
+<div class="legend">
+<span><i style="background:#2E86AB"></i>趋势结构</span><span><i style="background:#F6A821"></i>价格强度</span>
+<span><i style="background:#7DBB63"></i>趋势方向</span><span><i style="background:#9B5DE5"></i>相对强度</span>
+<span><i style="background:#D64550"></i>过热扣分</span>
+<span style="margin-left:auto">超额强度 = 行业涨幅 − 申万A指</span>
+</div>
+<div style="overflow-x:auto">
+<table>
+<thead><tr><th>排名</th><th>行业</th><th>大分类</th><th>评分</th><th>阶段</th><th>活跃ETF</th>
+<th>因子构成</th><th>结构</th><th>价格</th><th>方向</th><th>相对</th><th>过热</th>
+<th>20日%</th><th>60日%</th><th>超额60%</th><th>超额120%</th><th>RPS60</th><th>RPS120</th></tr></thead>
+<tbody id="tbody"></tbody>
+</table>
+</div>
+</div>
+
+<div class="tbl-card" id="rps-card" style="display:none">
+<div class="legend">
+<span>🚀 <b>行业RPS强度排名</b>（欧奈尔式相对强度：区间涨幅→全行业百分位×100）</span>
+<span style="margin-left:auto">行业相对强度排名表（多周期RPS20/50/60/90/120/250）· 点击表头可排序</span>
+</div>
+<div style="overflow-x:auto">
+<table>
+<thead><tr><th>排名</th><th>行业</th><th>RPS20</th><th>RPS50</th><th>RPS60</th><th>RPS90</th><th>RPS120</th><th>RPS250</th>
+<th>20日涨幅%</th><th>60日涨幅%</th><th>120日涨幅%</th></tr></thead>
+<tbody id="rps-tbody"></tbody>
+</table>
+</div>
+</div>
+
+<div class="tbl-card" id="erba-card" style="display:none">
+<div class="legend">
+<span>⚖️ <b>二八指数</b> · 大盘(二) vs 小盘(八) 20日涨幅进出场</span>
+<span style="margin-left:auto">复刻作者"二八指数"模块 · 阈值 <b>0%</b>：任一&gt;阈值→进场/满仓；全部&lt;阈值→清仓/空仓</span>
+</div>
+<div id="erba-body"></div>
+</div>
+
+<div class="tbl-card" id="concept-card" style="display:none">
+<div class="legend">
+<span>🧠 <b>概念板块评分</b> · 简化五因子(结构30+价格20+方向15+相对25−过热10) + 概念RPS</span>
+<span style="margin-left:auto">数据源：公开行情接口 · 概念评分以多周期涨幅镜像五因子思想</span>
+</div>
+<div style="padding:10px 16px 0;font-size:12.5px;color:#888" id="concept-kpis"></div>
+<div style="overflow-x:auto;max-height:640px;overflow-y:auto">
+<table>
+<thead><tr><th>排名</th><th>概念</th><th>评分</th><th>阶段</th><th>活跃ETF</th>
+<th>当日%</th><th>5日%</th><th>10日%</th><th>20日%</th><th>60日%</th><th>年初至今%</th>
+<th>RPS20</th><th>RPS60</th><th>领涨股</th></tr></thead>
+<tbody id="concept-tbody"></tbody>
+</table>
+</div>
+</div>
+
+<div class="notes">
+<b>📌 使用说明</b><br>
+① 上方Tab切换：<b>主升浪/强趋势/趋势形成/底部反转/TOP20/全部</b> 为主升浪评分系统的分类视图；<b>「二八指数」</b>为大盘/小盘进出场信号；<b>「概念板块」</b>为概念五因子评分+概念RPS（复刻作者 concept.html）；<b>「行业RPS」</b>为行业相对强度排名表（多周期RPS20/50/60/90/120/250）。<br>
+② <b>相对强度</b>是本系统的决定性因子：中长期RPS（60/120日）全行业领先者（如医疗服务 RPS60=100、RPS120=97）即便短期回调，仍可位居强趋势前列；短期BIAS20过高（过热）则被扣分压级。<br>
+③ <b>概念板块评分</b>为简化版五因子：因概念板块无公开K线源，以多周期涨幅（当日/5/10/20/60日）镜像五因子思想（结构=多周期多头、相对=RPS百分位、过热=短期涨幅过高），阶段阈值与行业模型一致。<br>
+④ RPS颜色：<span class="rps-cell rps-hi">≥90</span> <span class="rps-cell rps-mid">60-89</span> <span class="rps-cell rps-lo">&lt;60</span>。
+</div>
+
+<div class="foot">
+评分系统版本2.0 · 复刻自「大数据金牛座」《他们可能即将进入主升浪！》 · RPS表复刻自作者 rps_index.html<br>
+仅供量化研究与教学参考，不构成任何投资建议。
+</div>
+</div>
+
+<script>
+/* === 静态化注入：以下两行由 generate.py 替换 === */
+let DATA=__DATA_JSON__;
+const TAKEAWAY=__TAKEAWAY_JSON__;
+/* === 注入结束 === */
+function setupAuto(){/* 静态页无定时刷新 */}
+/* === 占位函数 load() 已废弃（数据直接内联），保留兼容 === */
+function load(){renderKpis();renderTabs();render();renderTakeaway();}
+let _timer=null;
+let TAB = "strong";
+const fmt = v => (v > 0 ? "+" : "") + (v ?? "--");
+const pct = v => v == null ? "--" : `<span class="${v >= 0 ? "up" : "down"}">${fmt(v)}%</span>`;
+const STATUS_CLS = {"主升浪":"main","强趋势":"strong","趋势形成":"forming","底部反转":"turn","弱势":"none"};
+const SCORE_CLS = {"主升浪":"main","强趋势":"strong","趋势形成":"forming","底部反转":"turn"};
+
+function tabDef(){
+  return [
+    {id:"main", label:"🔥 主升浪", rows:DATA.rows.filter(r=>r.status==="主升浪")},
+    {id:"strong", label:"⚡ 强趋势", rows:DATA.rows.filter(r=>r.status==="强趋势")},
+    {id:"top20", label:"🏆 TOP 20", rows:DATA.rows.slice(0,20)},
+    {id:"forming", label:"🌱 趋势形成", rows:DATA.rows.filter(r=>r.status==="趋势形成")},
+    {id:"turn", label:"♻️ 底部反转", rows:DATA.rows.filter(r=>r.status==="底部反转")},
+    {id:"all", label:"📋 全部行业", rows:DATA.rows},
+    {id:"erba", label:"⚖️ 二八指数", rows:[]},
+    {id:"concept", label:"🧠 概念板块", rows:[]},
+    {id:"rps", label:"🚀 行业RPS", rows:[]},
+  ];
+}
+function renderTabs(){
+  document.getElementById("tabs").innerHTML = tabDef().map(t =>
+    `<div class="tab ${TAB===t.id?'active':''}" onclick="TAB='${t.id}';renderTabs();render()">${t.label}<span class="cnt">${t.id==='rps'?DATA.rps.length:(t.id==='erba'?DATA.erba.rows.length:(t.id==='concept'?DATA.concepts.length:t.rows.length))}</span></div>`).join("");
+}
+function renderKpis(){
+  const sc = DATA.status_count;
+  const k = [
+    {v:sc["主升浪"],l:"主升浪(>80)",c:"#D64550"},
+    {v:sc["强趋势"],l:"强趋势(65-80)",c:"#F6A821"},
+    {v:sc["趋势形成"],l:"趋势形成(50-65)",c:"#7DBB63"},
+    {v:sc["底部反转"],l:"底部反转(35-50)",c:"#8AB6D6"},
+    {v:sc["弱势"],l:"弱势(<35)",c:"#9aa3b2"},
+    {v:DATA.total,l:"覆盖行业总数",c:"#1a1a2e"},
+  ];
+  document.getElementById("kpis").innerHTML = k.map(x=>`<div class="kpi"><div class="v" style="color:${x.c}">${x.v??0}</div><div class="l">${x.l}</div></div>`).join("");
+}
+function rpsCell(v){
+  if(v==null) return "--";
+  const cls = v>=90?"rps-hi":(v>=60?"rps-mid":"rps-lo");
+  return `<span class="rps-cell ${cls}">${v.toFixed(0)}</span>`;
+}
+function render(){
+  document.getElementById("tdate").textContent = DATA.trade_date;
+  const isErba = (TAB==="erba"), isRps = (TAB==="rps"), isCon = (TAB==="concept");
+  document.getElementById("score-card").style.display = (isRps||isErba||isCon)?"none":"";
+  document.getElementById("rps-card").style.display = isRps?"":"none";
+  document.getElementById("erba-card").style.display = isErba?"":"none";
+  document.getElementById("concept-card").style.display = isCon?"":"none";
+  if(isRps){ renderRps(); return; }
+  if(isErba){ renderErba(); return; }
+  if(isCon){ renderConcept(); return; }
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  let rows = tabDef().find(t=>t.id===TAB).rows;
+  if(q) rows = DATA.rows.filter(r=>r.name.toLowerCase().includes(q)||(r.etfs||[]).some(e=>e.name.toLowerCase().includes(q)));
+  if(!rows.length){ document.getElementById("tbody").innerHTML=`<tr><td colspan="18" class="empty">无匹配行业</td></tr>`; return; }
+  document.getElementById("tbody").innerHTML = rows.map(r=>{
+    const etf = (r.etfs||[]).map(e=>`<span class="etf">${e.name}<b>${e.code}</b></span>`).join("")||'<span style="color:#bbb">—</span>';
+    const f=r.factors, tot=Math.max(f["结构"]+f["价格"]+f["方向"]+f["相对"],0.01);
+    const w=x=>Math.max(0,x/tot*100);
+    const bar=`<span class="fbar"><i class="f1" style="width:${w(f["结构"])}%"></i><i class="f2" style="width:${w(f["价格"])}%"></i><i class="f3" style="width:${w(f["方向"])}%"></i><i class="f4" style="width:${w(f["相对"])}%"></i>${f["过热"]<0?`<i class="f5" style="width:${w(-f["过热"])}%"></i>`:""}</span>`;
+    const rc = r.rank<=3?"top":(r.status==="强趋势"?"s":(r.status==="趋势形成"?"f":""));
+    return `<tr class="${STATUS_CLS[r.status]||""}">
+      <td><span class="rank ${r.rank<=3?"top":rc}">${r.rank}</span></td>
+      <td class="name-cell">${r.name}<small>${r.code}</small></td>
+      <td style="font-size:12px;color:#666">${r.category}</td>
+      <td><span class="score ${SCORE_CLS[r.status]||""}">${r.score.toFixed(1)}</span></td>
+      <td><span class="tag ${STATUS_CLS[r.status]||"none"}">${r.status}</span></td>
+      <td style="white-space:normal;max-width:220px">${etf}</td>
+      <td>${bar}</td>
+      <td>${f["结构"]}</td><td>${f["价格"]}</td><td>${f["方向"]}</td><td>${f["相对"]}</td>
+      <td class="down" style="color:#D64550">${f["过热"]||0}</td>
+      <td>${pct(r.chg20)}</td><td>${pct(r.chg60)}</td><td>${pct(r.excess60)}</td><td>${pct(r.excess120)}</td>
+      <td>${rpsCell(r.rps60)}</td><td>${rpsCell(r.rps120)}</td>
+    </tr>`;
+  }).join("");
+}
+let rpsSortKey = "rps60", rpsDesc = true;
+function sortRps(key){
+  if(rpsSortKey===key) rpsDesc=!rpsDesc; else {rpsSortKey=key; rpsDesc=true;}
+  renderRps();
+}
+function renderRps(){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  let rows = DATA.rps.filter(r=>!q||r.name.toLowerCase().includes(q));
+  rows = rows.slice().sort((a,b)=>(b[rpsSortKey]??-1)-(a[rpsSortKey]??-1));
+  if(!rpsDesc) rows.reverse();
+  document.getElementById("rps-tbody").innerHTML = rows.map((r,i)=>{
+    const rk=i+1;
+    return `<tr>
+      <td><span class="rank ${rk<=3?"top":(rk<=10?"s":"")}">${rk}</span></td>
+      <td class="name-cell">${r.name}<small>${r.code}</small></td>
+      <td>${rpsCell(r.rps20)}</td><td>${rpsCell(r.rps50)}</td><td>${rpsCell(r.rps60)}</td>
+      <td>${rpsCell(r.rps90)}</td><td>${rpsCell(r.rps120)}</td><td>${rpsCell(r.rps250)}</td>
+      <td>${pct(r.ret20)}</td><td>${pct(r.ret60)}</td><td>${pct(r.ret120)}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="11" class="empty">无匹配行业</td></tr>`;
+  // 表头排序指示
+  document.querySelectorAll("#rps-card th").forEach((th,idx)=>{
+    const keys=["","",'rps20','rps50','rps60','rps90','rps120','rps250','ret20','ret60','ret120'];
+    const k=keys[idx];
+    if(k){ th.style.cursor="pointer"; th.onclick=()=>sortRps(k); th.textContent=th.textContent.replace(/ [▼▲]$/,"")+(k===rpsSortKey?(rpsDesc?" ▼":" ▲"):""); }
+  });
+}
+
+// —— 二八指数 ——
+function erbaSigClass(sig){
+  if(/部分数据缺失|受限/.test(sig)) return "erba-sig-mid";   // 数据不全→警示色
+  if(/进场|满仓/.test(sig)) return "erba-sig-in";
+  if(/清仓|空仓/.test(sig)) return "erba-sig-out";
+  if(/分化/.test(sig)) return "erba-sig-mid";
+  return "erba-sig-na";
+}
+function renderErba(){
+  const e = DATA.erba || {rows:[], signal2:"数据受限", signal8:"数据受限"};
+  const mk = (grp, sig, title, sub) => `
+    <div class="erba-col">
+      <h3>${title} <span style="font-size:12px;color:#999">${sub}</span></h3>
+      <span class="sig ${erbaSigClass(sig)}">${sig}</span>
+      ${e.rows.filter(r=>r.group===grp).map(r=>`
+        <div class="erba-row">
+          <span class="nm">${r.name}</span>
+          <span class="${r.available?'up':'na'}">${r.available?`<b class="up">${r.ret20>0?'+':''}${r.ret20}%</b>`:"数据源受限"}</span>
+        </div>`).join("")}
+    </div>`;
+  document.getElementById("erba-body").innerHTML = `
+    <div style="padding:12px 16px 0;font-size:12.5px;color:#888">数据日期 ${e.date||DATA.trade_date} · 阈值 ${e.threshold}% · 复刻逻辑：任一20日涨幅&gt;阈值→进场；全部&lt;阈值→清仓</div>
+    <div class="erba-grid">
+      ${mk("二", e.signal2||"数据受限", "二 系", "大盘/价值 · 蓝筹")}
+      ${mk("八", e.signal8||"数据受限", "八 系", "小盘/成长 · 题材")}
+    </div>
+    <div style="padding:0 16px 16px;font-size:12px;color:#999;line-height:1.7">
+      📌 <b>数据完整性</b>：<b>二系</b>（上证50/沪深300/中证100）数量齐全，本地信号可靠；<b>八系</b>中微盘股、中证2000(932000)为受限指数，免费源无法取数，已标注"数据源受限"，故八系信号仅供参看。该两项20日涨幅为正（微盘股+7.3%、中证2000+2.2%），是"八系进场/持有"的依据；如需精确结果，建议使用专业终端取值核实。
+    </div>`;
+}
+
+// —— 概念板块 ——
+let CON_STAGE = "all";
+function renderConcept(){
+  const cs = DATA.concepts || [];
+  const cc = DATA.concepts_count || {};
+  document.getElementById("concept-kpis").innerHTML =
+    `共 <b>${cs.length}</b> 个概念 · ` +
+    ["主升浪","强趋势","趋势形成","底部反转","弱势"].map(s=>
+      `<a href="javascript:void(0)" onclick="CON_STAGE='${s}';renderConcept()" style="margin-right:10px;${CON_STAGE===s?'font-weight:800;color:#D64550':''}">${s} ${cc[s]||0}</a>`).join("")+
+    `<a href="javascript:void(0)" onclick="CON_STAGE='all';renderConcept()" style="${CON_STAGE==='all'?'font-weight:800;color:#D64550':''}">全部</a>`;
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  let rows = cs.filter(r=>CON_STAGE==="all"||r.status===CON_STAGE);
+  if(q) rows = rows.filter(r=>r.name.toLowerCase().includes(q)||(r.etfs||[]).some(e=>e.name.toLowerCase().includes(q)));
+  document.getElementById("concept-tbody").innerHTML = rows.map(r=>{
+    const etf = (r.etfs||[]).map(e=>`<span class="etf">${e.name}<b>${e.code}</b></span>`).join("")||'<span style="color:#bbb">—</span>';
+    const lead = r.lead?`${r.lead}<small style="color:#999;margin-left:3px">${r.leadchg>=0?'+':''}${r.leadchg}%</small>`:"—";
+    return `<tr class="${STATUS_CLS[r.status]||""}">
+      <td><span class="rank ${r.rank<=3?"top":(r.rank<=10?"s":"")}">${r.rank}</span></td>
+      <td class="name-cell">${r.name}</td>
+      <td><span class="score ${SCORE_CLS[r.status]||""}">${r.score.toFixed(1)}</span></td>
+      <td><span class="tag ${STATUS_CLS[r.status]||"none"}">${r.status}</span></td>
+      <td style="white-space:normal;max-width:200px">${etf}</td>
+      <td>${pct(r.chg1)}</td><td>${pct(r.chg5)}</td><td>${pct(r.chg10)}</td>
+      <td>${pct(r.chg20)}</td><td>${pct(r.chg60)}</td><td>${pct(r.chgytd)}</td>
+      <td>${rpsCell(r.rps20)}</td><td>${rpsCell(r.rps60)}</td>
+      <td style="font-size:12px">${lead}</td>
+    </tr>`;
+  }).join("") || `<tr><td colspan="14" class="empty">无匹配概念</td></tr>`;
+}
+
+// —— 关键结论（极简 Take-Away）——
+// TAKEAWAY 已由 generate.py 注入
+function renderTakeaway(){
+  const sc = DATA.status_count||{};
+  document.getElementById("takeaway").innerHTML = `
+    <div class="tk-title">🎯 今日关键结论 · Take-Away</div>
+    ${TAKEAWAY.map((t,i)=>`<div class="tk-item"><span class="tk-num">${i+1}</span><div>${t}</div></div>`).join("")}
+    <div class="tk-verdict">一句话总结：${TAKEAWAY[0]||"暂无"}</div>`;
+}
+
+load();
+</script>
+</body>
+</html>
