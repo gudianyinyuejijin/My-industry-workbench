@@ -111,6 +111,35 @@ def build(force=False):
         "concepts": concepts,
         "concepts_count": {k: int(csc.get(k, 0)) for k in ["主升浪", "强趋势", "趋势形成", "底部反转", "弱势"]},
     }
+
+    # ---- 倒退保护（2026-09-12 加）----
+    # 场景：数据源（申万/东财）临时异常/被限流时，update() 会回退用仓库里的旧 pkl
+    # 重算——而 pkl 从不回传仓库、可能停在上传时的旧日期（如 9/8），算出的结果会比
+    # 线上现有 workbench.json（如 9/11）更旧。绝不能用旧数据覆盖新数据：
+    # 此时保留现有 payload（网页/推送/commit 维持"最近一次成功"状态），直到数据源恢复。
+    wb_path = f"{BASE}/data/workbench.json"
+    if os.path.exists(wb_path):
+        try:
+            with open(wb_path, encoding="utf-8") as f:
+                old = json.load(f)
+            old_date = str(old.get("trade_date") or "")
+            new_date = str(payload.get("trade_date") or "")
+            if old_date and new_date and new_date < old_date:
+                print(f"[protect] 数据源异常：本次只能算到 {new_date}，旧于现有 {old_date} —— "
+                      f"保留现有数据不倒退（网页/推送维持最近一次成功结果）")
+                old = dict(old)
+                old["note"] = f"数据源异常，沿用最近一次成功数据（{old_date}），本次未更新"
+                # 带着提示写回磁盘（数据本身保持旧的好数据），让推送/网页都能看到异常状态；
+                # 下次数据源恢复后会走正常路径整体覆盖，note 自动消失。
+                try:
+                    with open(wb_path, "w", encoding="utf-8") as f:
+                        json.dump(old, f, ensure_ascii=False)
+                except Exception as e:
+                    print(f"[protect] note 写回失败（忽略）: {e}")
+                return old
+        except Exception as e:
+            print(f"[protect] 保护检查失败（忽略，正常写入）: {e}")
+
     os.makedirs(f"{BASE}/data", exist_ok=True)
     with open(f"{BASE}/data/workbench.json", "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False)
