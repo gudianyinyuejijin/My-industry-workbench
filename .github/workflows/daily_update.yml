@@ -19,8 +19,8 @@ name: daily_workbench
 
 on:
   schedule:
-    - cron: '35 3 * * 1-5'   # 北京时间 工作日 11:35（=UTC 03:35）
-    - cron: '15 7 * * 1-5'   # 北京时间 工作日 15:15（=UTC 07:15）
+    - cron: '35 3 * * 1-5'   # 北京时间 工作日 11:35（=UTC 03:35）上午盘中快照
+    - cron: '0 9 * * 1-5'    # 北京时间 工作日 17:00（=UTC 09:00）收盘定稿
   workflow_dispatch:
 
 concurrency:
@@ -56,6 +56,19 @@ jobs:
 
       - name: generate static index.html
         run: python generate.py
+
+      - name: 推送每日战报到微信/手机
+        continue-on-error: true        # 推送失败不阻断网页部署
+        env:
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
+          PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          BARK_KEY:       ${{ secrets.BARK_KEY }}
+          EMAIL_HOST:     ${{ secrets.EMAIL_HOST }}
+          EMAIL_PORT:     ${{ secrets.EMAIL_PORT }}
+          EMAIL_USER:     ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS:     ${{ secrets.EMAIL_PASS }}
+          EMAIL_TO:       ${{ secrets.EMAIL_TO }}
+        run: python push_report.py
 
       - name: commit refreshed data back (防止60天无提交被停用定时)
         run: |
