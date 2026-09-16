@@ -1,10 +1,17 @@
 # GitHub Actions：每日构建并部署 行业主升浪工作台 到 GitHub Pages
 #
 # 触发：
-#   - schedule: 工作日 (Mon-Fri) 北京时间 11:35 / 15:15
-#       北京 = UTC+8 → 11:35 北京 = 03:35 UTC，15:15 北京 = 07:15 UTC
+#   - schedule: 工作日 (Mon-Fri) 北京时间 11:35 / 17:00 / 21:00 / 23:30
+#       北京 = UTC+8 → 11:35 北京 = 03:35 UTC，17:00 北京 = 09:00 UTC
 #       两条 cron 分开写，保证分钟数各自精确（不能合并成 35 3,7——那会让下午变成 15:35）
 #   - workflow_dispatch: 手动触发（首次部署 / 应急刷新）
+#
+# 数据源（2026-09-16 起三级降级，见 updater.fetch_all）：
+#   1) 东财全量 K 线 push2his     —— 实时、口径统一，首选
+#   2) 申万历史 + 东财当日涨跌幅补齐 push2delay —— push2his 不可达时的主力方案，
+#      实测申万 155 个行业与东财板块匹配率 100%，能把当天收盘补上
+#   3) 申万源单跑                 —— 最差也能到 T-1
+#   21:00 / 23:30 两次补跑是保险：数据日期没变化时不会重复推送。
 #
 # 并发：concurrency=cancel-in-progress 防止两次叠跑。
 #
@@ -19,8 +26,15 @@ name: daily_workbench
 
 on:
   schedule:
-    - cron: '35 3 * * 1-5'   # 北京时间 工作日 11:35（=UTC 03:35）上午盘中快照
-    - cron: '0 9 * * 1-5'    # 北京时间 工作日 17:00（=UTC 09:00）收盘定稿
+    # 申万行业指数数据发布常滞后于收盘数小时（2026-09-14 18:00 时其最新仍为 09-11），
+    # 所以夜里加两次"补跑"，确保当天数据一旦发布就能抓到并推送。
+    - cron: '35 3 * * 1-5'    # 北京时间 工作日 11:35（=UTC 03:35）上午快照
+    - cron: '0 9 * * 1-5'     # 北京时间 工作日 17:00（=UTC 09:00）收盘后（主力）
+    - cron: '00 13 * * 1-5'   # 北京时间 工作日 21:00（=UTC 13:00）补跑
+    - cron: '30 15 * * 1-5'   # 北京时间 工作日 23:30（=UTC 15:30）末次补跑
+                              # 注1：避开整点——GitHub整点是全球定时高峰，
+                              #      cron 常被延迟甚至丢弃（2026-09-11 的 17:00 就被丢过）
+                              # 注2：补跑全部错开分钟，且只在数据日期变化时才推送
   workflow_dispatch:
 
 concurrency:
@@ -35,7 +49,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30        # 东财全量重建（约 3-6 分钟）+ 申万兜底重抓（约 6 分钟）留足余量
     steps:
       - name: checkout (含 data/ 14MB pkl)
         uses: actions/checkout@v4
@@ -57,7 +71,24 @@ jobs:
       - name: generate static index.html
         run: python generate.py
 
+      # 申万数据源发布滞后（常晚于收盘数小时），所以一天跑多次"补跑"。
+      # 只有数据日期真的变化时才推送，避免同一天收到多条重复战报。
+      - name: 检查数据日期是否变化
+        id: check
+        run: |
+          OLD=$(git show HEAD:data/workbench.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('trade_date',''))" 2>/dev/null || echo "")
+          NEW=$(python3 -c "import json;print(json.load(open('data/workbench.json')).get('trade_date',''))")
+          echo "上次数据日期=$OLD  本次数据日期=$NEW"
+          if [ "$OLD" != "$NEW" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "数据已更新，本次将推送战报"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "数据日期未变化，跳过推送（避免重复扰民）"
+          fi
+
       - name: 推送每日战报到微信/手机
+        if: steps.check.outputs.changed == 'true'
         continue-on-error: true        # 推送失败不阻断网页部署
         env:
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
