@@ -25,6 +25,7 @@ import sys
 import json
 import urllib.request
 import urllib.parse
+from datetime import datetime, timedelta
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.path.join(BASE, "data", "workbench.json")
@@ -41,6 +42,15 @@ def md(s):
     """HTML 标签转 Markdown（build_takeaway 输出带 <b>，Server酱用 ** 加粗）"""
     return (s.replace("<b>", "**").replace("</b>", "**")
              .replace("&gt;", ">").replace("&lt;", "<").replace("&amp;", "&"))
+
+
+def bj_time(utc_str):
+    """runner 记录的 updated_at 是 UTC，+8 转成北京时间（避免误以为脚本没跑）"""
+    try:
+        t = datetime.strptime(str(utc_str), "%Y-%m-%d %H:%M:%S") + timedelta(hours=8)
+        return t.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return str(utc_str) if utc_str else ""
 
 
 def fmt_etfs(etfs, limit=3):
@@ -103,6 +113,13 @@ def build_report(d):
     # 数据源异常提示（倒退保护触发时 workbench.json 带 note 字段）
     if d.get("note"):
         head.append(f"⚠️ **{d['note']}**")
+    # 本次更新时间（北京时间）——让人一眼分清"脚本没跑"还是"数据源没给新数据"
+    ua_bj = bj_time(d.get("updated_at", ""))
+    if ua_bj:
+        head.append(f"🕒 更新于：{ua_bj}（北京时间）")
+    run_day = ua_bj[:10] if ua_bj else ""
+    if run_day and tdate and str(tdate) < run_day:
+        head.append(f"⏳ 申万最新发布只到 **{tdate}**（数据源滞后，非故障）")
     head += [
         f"覆盖 **{d.get('total', 0)}** 个行业",
         (f"主升浪 **{sc.get('主升浪', 0)}** ｜ 强趋势 **{sc.get('强趋势', 0)}** "
