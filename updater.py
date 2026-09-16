@@ -33,7 +33,63 @@ URL_HIST = "https://www.swsresearch.com/institute-sw/api/index_publish/trend/"
 
 
 def fetch_all(force=False):
-    """抓取全部行业指数数据（增量：数据已是今天则跳过）"""
+    """主入口（2026-09-16 改造）：三级数据源，逐层降级，保证「当天数据当天出」
+
+    1) 东财全量 K 线（push2his）  —— 最优：口径统一、历史完整、实时
+    2) 申万历史 + 东财当日涨跌幅补齐（push2delay）—— 稳妥：push2delay 已在用，
+       申万给到 T-1，东财补 T 日，合起来就是当天收盘数据
+    3) 申万源兜底                 —— 最差也能拿到 T-1/T-2
+    """
+    # 1) 东财全量
+    try:
+        from em_updater import update_from_em
+        names, data = update_from_em(force=force)
+        print("[update] 数据源：东财全量 K 线（实时）")
+        return names, data
+    except Exception as e:
+        print(f"[update] 东财全量源不可用（{str(e)[:100]}），改用申万+当日补齐")
+
+    # 2) 申万历史 + 东财当日补齐
+    #    小优化：若缓存只落后最近交易日 1 天（申万典型滞后），直接复用缓存，
+    #    让 em_today 把今天补上即可，省掉一轮 156 次全量重抓（约 6 分钟）。
+    if not force and _cache_gap() <= 1:
+        try:
+            blob = pd.read_pickle(PKL)
+            names, data = blob["names"], blob["data"]
+            latest = max(d.iloc[-1]["date"] for d in data.values() if len(d))
+            print(f"[update] 复用申万缓存（最新 {latest}），交由东财补当日")
+        except Exception as e:
+            print(f"[update] 缓存读取失败，改为重抓：{str(e)[:80]}")
+            names, data = _fetch_sw(force=force)
+    else:
+        names, data = _fetch_sw(force=force)
+    try:
+        from em_today import append_today
+        names, data = append_today()
+        print("[update] 数据源：申万历史 + 东财当日收盘（已补齐到今天）")
+    except Exception as e:
+        print(f"[update] 当日补齐未生效（{str(e)[:100]}），数据截至申万最新")
+    return names, data
+
+
+def _cache_gap():
+    """pkl 缓存最新日期距离「最近交易日」差几天（缓存不可用时返回 99）"""
+    try:
+        if not os.path.exists(PKL):
+            return 99
+        data = pd.read_pickle(PKL)["data"]
+        latest = max(d.iloc[-1]["date"] for d in data.values() if len(d))
+        latest_dt = pd.Timestamp(latest).date()
+        ref = pd.Timestamp.now().date()
+        while ref.weekday() >= 5:
+            ref -= pd.Timedelta(days=1)
+        return max(0, (ref - latest_dt).days)
+    except Exception:
+        return 99
+
+
+def _fetch_sw(force=False):
+    """申万官网源（原逻辑，作为兜底保留）"""
     pkl = PKL
     blob = None
     if os.path.exists(pkl) and not force:
