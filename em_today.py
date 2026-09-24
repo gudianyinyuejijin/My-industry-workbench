@@ -113,15 +113,28 @@ def append_today():
 
     bpct, eday = bench_today()
     now = _bj_now()
-    # 盘中保护：东财时间戳是今天，但还没收盘 → 不追加（避免把盘中价当收盘价）
-    if eday == now.date() and (now.hour * 60 + now.minute) < 15 * 60 + 5:
+    # 盘中保护：还没收盘，绝不碰当日数据（盘中价不是收盘价，不能进日线序列）
+    if eday == now.date() and (now.hour * 60 + now.minute) < 15 * 60 + 2:
         raise RuntimeError(f"当前北京时间 {now:%H:%M} 未收盘，不追加当日数据")
 
     cur = max(d["date"].iloc[-1] for d in data.values()
               if isinstance(d, pd.DataFrame) and len(d))
     cur = pd.Timestamp(cur).date()
-    if eday <= cur:
-        raise RuntimeError(f"东财最新 {eday} 未超过现有 {cur}，无需补齐")
+    # eday > cur → 补上新的一天
+    # eday == cur → 同一天，收盘后用最新涨跌幅「校准」一次（见下）
+    # eday < cur  → 东财比现有还旧，绝对不能倒退
+    if eday < cur:
+        raise RuntimeError(f"东财最新 {eday} 旧于现有 {cur}，禁止覆盖")
+    same_day = (eday == cur)
+    # 护栏：东财在停市日会一直吐「上一交易日」的数据，时间戳可能跨度异常，
+    # 直接拿来追加会凭空造出一个假交易日
+    if eday.weekday() >= 5:
+        raise RuntimeError(f"{eday} 是周末，非交易日，不追加")
+    # 未来日期必然是脏数据（时差/伪造时间戳）。
+    # 注意：这里刻意不限制「距今跨度」，因为长假后首次运行需要追赶若干天，
+    # 一刀切反而会把正常的追补卡死。只要 eday 是东财真实吐出来的交易日即可。
+    if eday > now.date():
+        raise RuntimeError(f"东财日期 {eday} 晚于今天 {now.date()}，数据异常，不追加")
 
     chg = em_board_chg()
     if len(chg) < 300:
@@ -150,7 +163,10 @@ def append_today():
     if hit < 100:
         raise RuntimeError(f"补齐命中过少({hit})，放弃本次补齐")
 
-    print(f"[em-today] 补齐 {eday}：命中 {hit} 个，未匹配 {miss} 个，基准涨跌幅 {bpct}%")
+    if same_day:
+        print(f"[em-today] 校准 {eday}（收盘后用最新涨跌幅覆盖）：命中 {hit}，基准 {bpct}%")
+    else:
+        print(f"[em-today] 补齐 {eday}：命中 {hit} 个，未匹配 {miss} 个，基准涨跌幅 {bpct}%")
     blob["data"] = data
     blob["source"] = blob.get("source", "sws") + "+em_today"
     blob["last_em_day"] = str(eday)
