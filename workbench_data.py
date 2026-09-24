@@ -102,6 +102,9 @@ def build(force=False):
         "updated_at": pd.Timestamp.now().strftime("%Y-%m-%d %H:%M:%S"),
         "trade_date": str(trade_date),
         "version": "2.0",
+        # True = 这份数据是「盘中快照」：当日尚未收盘，用的是东财实时报价，
+        # 收盘后那次运行会用收盘价覆盖修正。网页与推送据此加标注，避免误读。
+        "intraday": bool(blob.get("intraday", False)),
         "total": len(rows),
         "status_count": {k: int(status_count.get(k, 0)) for k in ["主升浪", "强趋势", "趋势形成", "底部反转", "弱势"]},
         "rows": rows,
