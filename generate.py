@@ -53,11 +53,13 @@ def build_takeaway(payload):
     n_turn = sc.get("底部反转", 0)
 
     # 头部
+    tag = "【盘中快照·未收盘】" if payload.get("intraday") else ""
     if rows:
         top1 = rows[0]
-        head = f"今日TOP1：<b>{top1['name']}</b>（{top1['status']}，评分{top1['score']:.1f}，超额60日{top1['excess60']:+.1f}%）"
+        head = (f"{tag}今日TOP1：<b>{top1['name']}</b>"
+                f"（{top1['status']}，评分{top1['score']:.1f}，超额60日{top1['excess60']:+.1f}%）")
     else:
-        head = "今日暂无评分数据"
+        head = f"{tag}今日暂无评分数据"
 
     if n_main > 0:
         mains = [r["name"] for r in rows if r["status"] == "主升浪"][:5]
@@ -90,11 +92,60 @@ def build_takeaway(payload):
     else:
         line4 = "暂无底部反转信号。"
 
-    # 二八信号
+    # 二八信号 —— 补足实质内容：
+    # 原来只拼一句「二系X / 八系Y」，等于把模板宣读一遍，看不出依据。
+    # 现在给出每组有多少个指数站在阈值之上、最强/最弱分别多少，
+    # 以及两组谁占优（大盘 vs 小盘风格），并如实标出哪些指数没取到。
     erba = payload.get("erba", {}) or {}
+    erows = erba.get("rows", []) or []
     sig2 = erba.get("signal2", "数据受限")
     sig8 = erba.get("signal8", "数据受限")
-    line5 = f"二八择时：二系「<b>{sig2}</b>」/ 八系「<b>{sig8}</b>」——阈值0%，任一>阈值即可进场。"
+    try:
+        thr = float(erba.get("threshold") or 0.0)
+    except Exception:
+        thr = 0.0
+
+    def _grp(g):
+        rs = [r for r in erows
+              if r.get("group") == g and r.get("available")
+              and isinstance(r.get("ret20"), (int, float))]
+        if not rs:
+            return None
+        rs.sort(key=lambda x: x["ret20"], reverse=True)
+        return {
+            "n": len(rs),
+            "pos": sum(1 for r in rs if r["ret20"] > thr),
+            "strong": rs[0], "weak": rs[-1],
+            "avg": sum(r["ret20"] for r in rs) / len(rs),
+        }
+
+    s2, s8 = _grp("二"), _grp("八")
+    parts = []
+    for tag, st, sig in (("二系", s2, sig2), ("八系", s8, sig8)):
+        if not st:
+            parts.append(f"{tag}数据受限")
+            continue
+        parts.append(
+            f"{tag}{st['n']}个指数里 <b>{st['pos']}</b> 个20日涨幅过阈值，"
+            f"最强 <b>{st['strong']['name']} {st['strong']['ret20']:+.1f}%</b> / "
+            f"最弱 {st['weak']['name']} {st['weak']['ret20']:+.1f}%（均值{st['avg']:+.1f}%）"
+            f"→「<b>{sig}</b>」"
+        )
+
+    line5 = f"二八择时（阈值{thr:g}%）：" + "；".join(parts) + "。"
+
+    if s2 and s8:
+        gap = s8["avg"] - s2["avg"]
+        if gap >= 2:
+            line5 += f" 小盘跑赢大盘 {gap:.1f} 个百分点，风格偏八。"
+        elif gap <= -2:
+            line5 += f" 大盘跑赢小盘 {abs(gap):.1f} 个百分点，风格偏二。"
+        else:
+            line5 += " 两系差距不大，风格均衡。"
+
+    missing = [r.get("name") for r in erows if not r.get("available")]
+    if missing:
+        line5 += f"（未取到：{'/'.join(missing)}，其余指数照常参与判断）"
 
     # 概念头部
     cs = payload.get("concepts", []) or []
