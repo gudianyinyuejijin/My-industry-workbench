@@ -113,9 +113,13 @@ def append_today():
 
     bpct, eday = bench_today()
     now = _bj_now()
-    # 盘中保护：还没收盘，绝不碰当日数据（盘中价不是收盘价，不能进日线序列）
-    if eday == now.date() and (now.hour * 60 + now.minute) < 15 * 60 + 2:
-        raise RuntimeError(f"当前北京时间 {now:%H:%M} 未收盘，不追加当日数据")
+    # 盘中 vs 收盘后，两种情况区别对待：
+    #   盘中（15:02 前）→ 仍构造当天数据，但标记为 intraday —— 用户中午也能看到
+    #                     今天的实时强弱，下午收盘那次会用收盘价自动覆盖修正
+    #   收盘后          → 正常补齐 / 校准
+    # 之所以敢让盘中数据进序列，是因为「同日校准」机制保证它一定会被收盘价替换。
+    minutes = now.hour * 60 + now.minute
+    intraday = (eday == now.date() and minutes < 15 * 60 + 2)
 
     cur = max(d["date"].iloc[-1] for d in data.values()
               if isinstance(d, pd.DataFrame) and len(d))
@@ -163,12 +167,18 @@ def append_today():
     if hit < 100:
         raise RuntimeError(f"补齐命中过少({hit})，放弃本次补齐")
 
-    if same_day:
+    if intraday:
+        print(f"[em-today] 盘中快照 {eday}（{now:%H:%M} 未收盘，收盘后自动校准）："
+              f"命中 {hit}，基准 {bpct}%")
+    elif same_day:
         print(f"[em-today] 校准 {eday}（收盘后用最新涨跌幅覆盖）：命中 {hit}，基准 {bpct}%")
     else:
         print(f"[em-today] 补齐 {eday}：命中 {hit} 个，未匹配 {miss} 个，基准涨跌幅 {bpct}%")
+
     blob["data"] = data
-    blob["source"] = blob.get("source", "sws") + "+em_today"
+    if "em_today" not in str(blob.get("source") or ""):
+        blob["source"] = (blob.get("source") or "sws") + "+em_today"
+    blob["intraday"] = bool(intraday)      # 供网页/推送标注「盘中快照」
     blob["last_em_day"] = str(eday)
     pd.to_pickle(blob, PKL)
     return names, data
