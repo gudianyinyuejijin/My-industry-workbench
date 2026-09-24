@@ -57,9 +57,9 @@ def build_takeaway(payload):
     if rows:
         top1 = rows[0]
         head = (f"{tag}今日TOP1：<b>{top1['name']}</b>"
-                f"（{top1['status']}，评分{top1['score']:.1f}，超额60日{top1['excess60']:+.1f}%）")
+                f"（{top1['status']}，评分{top1['score']:.1f}，超额60日{top1['excess60']:+.1f}%）。")
     else:
-        head = f"{tag}今日暂无评分数据"
+        head = f"{tag}今日暂无评分数据。"
 
     if n_main > 0:
         mains = [r["name"] for r in rows if r["status"] == "主升浪"][:5]
