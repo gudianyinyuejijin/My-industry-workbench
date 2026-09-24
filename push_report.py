@@ -49,6 +49,9 @@ def fingerprint(obj):
     if not obj:
         return ""
     td = str(obj.get("trade_date") or "")
+    # 盘中快照(I) 与 收盘定稿(C) 算不同指纹：即使分数碰巧一样，
+    # 收盘后也要再推一次定稿版（否则用户拿到的始终是中午那份未收盘的数据）
+    intra = "I" if obj.get("intraday") else "C"
     parts = []
     for r in (obj.get("rows") or [])[:20]:
         try:
@@ -56,7 +59,7 @@ def fingerprint(obj):
         except Exception:
             sc = 0
         parts.append(f"{r.get('name')}:{sc}")
-    return td + "|" + "|".join(parts)
+    return f"{td}|{intra}|" + "|".join(parts)
 
 
 def last_fingerprint():
@@ -144,6 +147,10 @@ def build_report(d):
         "## 📊 行业主升浪 · 每日战报",
         f"**📅 数据日期：{tdate}**",
     ]
+    # 盘中快照醒目标注：当日未收盘，数值还会变，收盘后那次会覆盖为定稿版
+    if d.get("intraday"):
+        head.append("⏱️ **盘中快照（当日未收盘，数值还会变）**")
+        head.append("收盘后将自动刷新为收盘定稿版，届时会再推一条。")
     # 数据源异常提示（倒退保护触发时 workbench.json 带 note 字段）
     if d.get("note"):
         head.append(f"⚠️ **{d['note']}**")
@@ -276,6 +283,8 @@ def main():
         print("[push] FORCE_PUSH=1，忽略变化检测，强制推送")
 
     title = f"行业主升浪战报 · {d.get('trade_date', '-')}"
+    if d.get("intraday"):
+        title += "（盘中）"
     content = build_report(d)
     print(content)
     print("\n" + "=" * 40)
