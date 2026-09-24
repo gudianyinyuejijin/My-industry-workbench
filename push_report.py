@@ -38,6 +38,40 @@ def load():
         return json.load(f)
 
 
+def fingerprint(obj):
+    """数据指纹 = 交易日 + TOP20 的「行业名:整数分」
+
+    为什么不能只比 trade_date：中午那次经常「日期没变、但数据已经被修正」——
+    例如昨天下午是用『申万 T-2 + 东财推算 T-1』算的，今天中午申万把 T-1 的
+    真实数据发出来了，重算后分数会变，但 trade_date 仍然是 T-1，
+    只比日期就会误判成「没变化」而漏推。所以把名次和分数一起纳进来比。
+    """
+    if not obj:
+        return ""
+    td = str(obj.get("trade_date") or "")
+    parts = []
+    for r in (obj.get("rows") or [])[:20]:
+        try:
+            sc = round(float(r.get("score") or 0))
+        except Exception:
+            sc = 0
+        parts.append(f"{r.get('name')}:{sc}")
+    return td + "|" + "|".join(parts)
+
+
+def last_fingerprint():
+    """上一次已推送的指纹：取 git HEAD 里那份 workbench.json
+    （每次跑完都会 commit 回去，所以 HEAD 就是上次成功的结果）"""
+    try:
+        import subprocess
+        txt = subprocess.check_output(
+            ["git", "show", "HEAD:data/workbench.json"],
+            cwd=BASE, stderr=subprocess.DEVNULL)
+        return fingerprint(json.loads(txt.decode("utf-8")))
+    except Exception:
+        return ""      # 取不到（首次运行）→ 当作有变化，正常推
+
+
 def md(s):
     """HTML 标签转 Markdown（build_takeaway 输出带 <b>，Server酱用 ** 加粗）"""
     return (s.replace("<b>", "**").replace("</b>", "**")
@@ -229,6 +263,18 @@ def send(title, content):
 
 def main():
     d = load()
+
+    # —— 是否值得推送：数据有实质变化才推，避免一天收到好几条一模一样的 ——
+    cur = fingerprint(d)
+    prev = last_fingerprint()
+    force = os.environ.get("FORCE_PUSH") == "1"
+    if not force and cur and prev and cur == prev:
+        print(f"[push] 数据无实质变化（交易日与 TOP20 名次/分数均与上次一致），跳过推送")
+        print(f"[push] 指纹：{cur[:90]}…")
+        return
+    if force:
+        print("[push] FORCE_PUSH=1，忽略变化检测，强制推送")
+
     title = f"行业主升浪战报 · {d.get('trade_date', '-')}"
     content = build_report(d)
     print(content)
