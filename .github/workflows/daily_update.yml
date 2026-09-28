@@ -1,52 +1,61 @@
 # GitHub Actions：每日构建并部署 行业主升浪工作台 到 GitHub Pages
 #
 # 触发：
-#   - schedule: 工作日 (Mon-Fri) 北京时间 11:35 / 15:16 / 21:00 / 23:30
+#   - schedule: 工作日 (Mon-Fri) 北京时间 11:35 / 15:16 / 15:35 / 16:05 / 17:20 / 21:00 / 23:30
 #       北京 = UTC+8 → 11:35 北京 = 03:35 UTC，15:16 北京 = 07:16 UTC
-#       两条 cron 分开写，保证分钟数各自精确（不能合并成 35 3,7——那会让下午变成 15:35）
+#       每条 cron 分开写，保证分钟数各自精确（不能合并成 35 3,7）
 #
-#       设计意图：A股 15:00 收盘，东财当场就有当天收盘价，所以把首刷放在
-#       15:06（收盘后 6 分钟），而不是等到 17:00 —— 17:00 是当初被申万
-#       隔夜发布拖出来的妥协，换成东财实时源之后就没必要了。
-#       15:16 / 15:28 是给 GitHub cron 不确定延迟兜底的（谁先跑起来谁生效）。
 #   - workflow_dispatch: 手动触发（首次部署 / 应急刷新）
 #
 # 数据源（2026-09-16 起三级降级，见 updater.fetch_all）：
 #   1) 东财全量 K 线 push2his     —— 实时、口径统一，首选
-#   2) 申万历史 + 东财当日涨跌幅补齐 push2delay —— push2his 不可达时的主力方案，
-#      实测申万 155 个行业与东财板块匹配率 100%，能把当天收盘补上
+#   2) 申万历史 + 东财当日涨跌幅补齐 —— push2his 不可达时的主力方案
 #   3) 申万源单跑                 —— 最差也能到 T-1
-#   21:00 / 23:30 两次补跑是保险：数据日期没变化时不会重复推送。
 #
-# 并发：concurrency=cancel-in-progress 防止两次叠跑。
-#
-# 关键设计：
-#   1) 每次运行 generate.py 后，把刷新的小文件（index.html / workbench.json）
-#      commit 回仓库 —— 既是历史快照，更重要的是让仓库保持活跃，
-#      避免GitHub「60天无提交自动停用定时任务」的机制把每日更新悄悄停掉。
-#      （大文件 sw_industry.pkl 不回传，防止仓库膨胀；反正每次都会重抓最新。）
-#   2) 部署用 GitHub Pages with Actions（upload-pages-artifact + deploy-pages 标准4步）。
+# ── 2026-09-24 重要修正 v6.6 ────────────────────────────────────────
+# 现象：整个下午连跑 6 次（含手动）都只出 T-1(09-23) 数据，
+#       但同一时刻从别的机器打东财完全正常（15:37 的实时行情、中证2000/北证50 都有值）。
+# 根因：GitHub Actions 的出口 IP 属于公共云数据中心段，东财会按 IP 限流/断连，
+#       而 runner 的出口 IP **每次运行都不固定** → 典型症状就是「时通时断」。
+#       之前「有时候中午有推送、有时候没有」也是同一个原因。
+# 对策：
+#   1) em_today.py 改为多域名轮换（push2delay / push2 / 82 / 23 / push2ex），
+#      被封的往往只是其中一个集群。
+#   2) 收盘后加密轮询：15:16 / 15:35 / 16:05 / 17:20 —— 每次是新 runner（大概率新 IP），
+#      多试几次总有一次打得进去。这就是你要的「尽早拿到更新」。
+#   3) 开头加 em_diag.py 连通性自检，日志里直接写明哪个域名通、哪个被拒，不用再猜。
+#   4) 【修 bug】删掉原来那个「用 trade_date 是否变化来决定推不推送」的 check 步骤：
+#      中午 11:35 和 收盘后这两次的 trade_date 是**同一天**，于是下午那次会被
+#      判定「数据日期未变化」而跳过推送 —— 你有时收不到下午战报就是它干的。
+#      现在推送完全交给 push_report.py 内部的数据指纹判定（含盘中/收盘标记）。
+# ────────────────────────────────────────────────────────────────────
 
 name: daily_workbench
 
 on:
   schedule:
-    # 申万行业指数数据发布常滞后于收盘数小时（2026-09-14 18:00 时其最新仍为 09-11），
-    # 所以夜里加两次"补跑"，确保当天数据一旦发布就能抓到并推送。
-    - cron: '35 3 * * 1-5'    # 北京时间 工作日 11:35（=UTC 03:35）上午快照
-    - cron: '16 7 * * 1-5'     # 北京时间 工作日 15:16（=UTC 07:16）收盘后（主力）
-    - cron: '00 13 * * 1-5'   # 北京时间 工作日 21:00（=UTC 13:00）补跑
-    - cron: '30 15 * * 1-5'   # 北京时间 工作日 23:30（=UTC 15:30）末次补跑
-                              # 注1：避开整点——GitHub整点是全球定时高峰，
-                              #      cron 常被延迟甚至丢弃（2026-09-11 的 17:00 就被丢过）
-                              # 注2：补跑全部错开分钟，且只在数据日期变化时才推送
-                              # 注3：是否推微信由 push_report.py 比对「数据指纹」决定，
-                              #      数据没实质变化就不推，所以一天不会收到重复内容。
+    - cron: '35 3 * * 1-5'    # 北京时间 工作日 11:35（=UTC 03:35）午间快照
+    # —— 下午「密集轮询窗口」——
+    # A股 15:00 收盘，东财当场就有当天收盘价（不像申万要隔夜）。
+    # 但 runner 到东财会被按 IP 限流，一次不一定打得进去，
+    # 所以这里连开 4 枪：谁先真正打通谁生效。
+    - cron: '16 7 * * 1-5'    # 北京时间 15:16（=UTC 07:16）★收盘后首刷
+    - cron: '35 7 * * 1-5'    # 北京时间 15:35（=UTC 07:35）
+    - cron: '05 8 * * 1-5'    # 北京时间 16:05（=UTC 08:05）
+    - cron: '20 9 * * 1-5'    # 北京时间 17:20（=UTC 09:20）
+    - cron: '00 13 * * 1-5'   # 北京时间 21:00（=UTC 13:00）补跑
+    - cron: '30 15 * * 1-5'   # 北京时间 23:30（=UTC 15:30）末次补跑
+                              # 注：避开整点——GitHub 整点是全球定时高峰，
+                              #     cron 常被延迟甚至丢弃（2026-09-11 的 17:00 就被丢过）。
+                              #     21:00 这条是唯一的例外（深夜影响不大）。
+                              #     会不会重复推送由 push_report.py 的数据指纹决定，不会扰民。
   workflow_dispatch:
 
 concurrency:
   group: daily
-  cancel-in-progress: true
+  # 原来这里是 true：新任务会把正在跑的旧任务直接砍掉。
+  # 东财慢的时候（或正在重抓申万）被砍很可惜，改成排队更稳。
+  cancel-in-progress: false
 
 permissions:
   contents: write   # 需要 write 才能 commit 回仓库（保持仓库活跃）
@@ -75,35 +84,21 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # 先自检：这台 runner 到底能不能连上东财、哪些域名通。
+      # 几秒钟的成本，但决定了后面能不能拿到当日数据 ——
+      # 一旦页面停在 T-1，看这段日志就知道是被限流还是代码问题。
+      - name: diagnose EM connectivity
+        continue-on-error: true
+        run: python em_diag.py
+
       - name: generate static index.html
         run: python generate.py
 
-
-      # 是否推送由 push_report.py 自己判断：
-      # 它会拿 git HEAD 里上次那份 workbench.json 跟本次比对「数据指纹」
-      # （交易日 + TOP20 的行业名次和整数分数），有实质变化才推。
-      # 这样做是因为：中午那次经常「日期没变、但数据已被修正」——
-      # 昨天下午是『申万T-2 + 东财推算』，今天中午申万发出真实 T-1，
-      # 分数会变而 trade_date 不变，只比日期就会漏推。
-      # 若想让某一档无条件推，给它加 env: FORCE_PUSH: '1' 即可。
-      # 申万数据源发布滞后（常晚于收盘数小时），所以一天跑多次"补跑"。
-      # 只有数据日期真的变化时才推送，避免同一天收到多条重复战报。
-      - name: 检查数据日期是否变化
-        id: check
-        run: |
-          OLD=$(git show HEAD:data/workbench.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('trade_date',''))" 2>/dev/null || echo "")
-          NEW=$(python3 -c "import json;print(json.load(open('data/workbench.json')).get('trade_date',''))")
-          echo "上次数据日期=$OLD  本次数据日期=$NEW"
-          if [ "$OLD" != "$NEW" ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "数据已更新，本次将推送战报"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "数据日期未变化，跳过推送（避免重复扰民）"
-          fi
-
+      # 推送判定完全交给 push_report.py 内部的数据指纹：
+      # 指纹 = 交易日 + 盘中/收盘标记 + TOP20 行业名次 + 整数分。
+      # 这样「同一天从中午的盘中快照变成收盘定稿」也能正确触发第二次推送。
+      # 不再用 trade_date 单独判断（那样会把同一天的第二次推送吞掉）。
       - name: 推送每日战报到微信/手机
-        if: steps.check.outputs.changed == 'true'
         continue-on-error: true        # 推送失败不阻断网页部署
         env:
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}
