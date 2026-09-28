@@ -145,7 +145,9 @@ def build_takeaway(payload):
 
     missing = [r.get("name") for r in erows if not r.get("available")]
     if missing:
-        line5 += f"（未取到：{'/'.join(missing)}，其余指数照常参与判断）"
+        # 已依次尝试 东财实时 → 东财日K自算 → 腾讯/新浪日K，三层都空才算真缺失
+        line5 += (f"（未取到：{'/'.join(missing)}；已依次尝试东财实时、东财日K、"
+                  f"腾讯/新浪三个数据源均无返回，其余指数照常参与判断）")
 
     # 概念头部
     cs = payload.get("concepts", []) or []
