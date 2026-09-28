@@ -25,6 +25,7 @@ T 日收盘数据要等到 T+1 才发布。这导致工作台永远慢一天。
 """
 import os
 import json
+import time
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
@@ -33,8 +34,18 @@ import requests
 BASE = os.path.dirname(os.path.abspath(__file__))
 PKL = os.path.join(BASE, "data", "sw_industry.pkl")
 
-EM_LIST = "https://push2delay.eastmoney.com/api/qt/clist/get"
-EM_ULIST = "https://push2delay.eastmoney.com/api/qt/ulist.np/get"
+# 候选主机：不同子域名解析到不同集群。GitHub Actions 的出口 IP 属于数据中心段，
+# 东财会按 IP 限流/断连，而一次运行里通常只是其中某几个域名被拒，
+# 所以必须轮换，不能死守 push2delay 一个。
+EM_HOSTS = [
+    "https://push2delay.eastmoney.com",   # 延时行情（原本唯一在用的）
+    "https://push2.eastmoney.com",        # 实时行情主站
+    "https://82.push2.eastmoney.com",     # 数字镜像节点
+    "https://23.push2.eastmoney.com",
+    "https://push2ex.eastmoney.com",      # 扩展节点
+]
+EM_LIST_PATH = "/api/qt/clist/get"
+EM_ULIST_PATH = "/api/qt/ulist.np/get"
 
 BENCH = "801003"       # 评分引擎使用的基准代码（槽位保留）
 BENCH_EM = "1.000001"  # 东财「上证指数」secid
@@ -53,14 +64,54 @@ def _bj_now():
     return datetime.now(CST)
 
 
+def _em_json(path, params, timeout=20, tries=2):
+    """在所有候选主机里找一个真能用的，返回 (host, json)。全挂则返回 (None, None)
+
+    判定「可用」的标准是 200 且 data.diff 非空 —— 东财被限流时经常返回
+    HTTP 200 但 body 里 data 为 null 或 diff 为 []，只看状态码会被骗过去。"""
+    last = ""
+    for host in EM_HOSTS:
+        for _ in range(tries):
+            try:
+                r = requests.get(host + path, params=params, headers=HEADERS, timeout=timeout)
+                if r.status_code != 200:
+                    last = f"{host} HTTP {r.status_code}"
+                    break
+                j = r.json()
+                d = j.get("data") or {}
+                if d.get("diff") or d.get("klines"):
+                    return host, j
+                last = f"{host} 200但无数据"
+            except Exception as e:
+                last = f"{host} {type(e).__name__}: {str(e)[:40]}"
+                time.sleep(0.4)
+    print(f"[em-today] 所有东财域名均不可用（最后：{last}）")
+    return None, None
+
+
 def em_board_chg():
     """东财行业板块当日涨跌幅 {板块名: 涨跌幅%}（分页抓全 496 个）"""
     out = {}
+    host = None
     for pn in range(1, 8):
-        j = requests.get(EM_LIST, params={
+        params = {
             "pn": pn, "pz": 100, "po": 1, "np": 1, "fltt": 2, "invt": 2,
             "fs": "m:90+t:2+f:!50", "fields": "f2,f3,f12,f14", "fid": "f3",
-        }, headers=HEADERS, timeout=25).json()
+        }
+        # 第一页选定可用主机后，后续页固定用它，避免跨主机数据口径混着来
+        if host:
+            try:
+                j = requests.get(host + EM_LIST_PATH, params=params,
+                                 headers=HEADERS, timeout=25).json()
+            except Exception as e:
+                print(f"[em-today] 第{pn}页续抓失败({type(e).__name__})，提前结束")
+                break
+        else:
+            host, j = _em_json(EM_LIST_PATH, params, timeout=25)
+            if host:
+                print(f"[em-today] 板块列表选用域名：{host}")
+        if not j:
+            break
         diff = ((j.get("data") or {}).get("diff")) or []
         if not diff:
             break
@@ -74,10 +125,11 @@ def em_board_chg():
 
 def bench_today():
     """上证指数当日涨跌幅 + 东财行情时间戳 → (涨跌幅%, 行情日期)"""
-    j = requests.get(EM_ULIST, params={
-        "secids": BENCH_EM, "fltt": 2, "invt": 2,
-        "fields": "f2,f3,f12,f14,f124",
-    }, headers=HEADERS, timeout=20).json()
+    host, j = _em_json(EM_ULIST_PATH, {
+        "secids": BENCH_EM, "fltt": 2, "invt": 2, "fields": "f2,f3,f12,f14,f124",
+    }, timeout=20)
+    if not j:
+        raise RuntimeError("东财基准指数无返回（所有域名均被拒，详见 em_diag 自检）")
     d = (j.get("data") or {}).get("diff") or []
     if not d:
         raise RuntimeError("东财基准指数无返回")
